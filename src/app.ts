@@ -1,18 +1,21 @@
 import bot from "./bot"
-import load from "./commands/load"
 import login from "./commands/login"
+import logger from "./logger"
+import UserManager from "./UserManager"
 
 const RESPONSES = {
     OK: '--> OK <--'
 }
 
-function startBot() {
+async function startBot() {
+    const childLogger = logger.child({ method: 'startBot' })
+
+    await UserManager.init()
+    childLogger.info('UserManager initialized done.')
+
     bot.onText(/\/login(.+)/, login)
+    // bot.onText(/\/status(.+)/, status)
     // bot.onText(/\/load/, load)
-}
-
-function loadData() {
-
 }
 
 startBot()

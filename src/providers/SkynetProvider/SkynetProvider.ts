@@ -1,37 +1,70 @@
-import { IProvider } from "../IProvider";
-import { SkynetClient, genKeyPairFromSeed } from "skynet-js";
+import { IProvider, Item } from "../IProvider";
+import MiniSearch from 'minisearch'
+import SkynetWrapped, { ISkynet } from "./skynet-js/skynet";
+
+export interface SkynetItem {
+    id: string
+    text: string
+    category: string
+}
+
+const MINISEARCH_CONFIG = {
+    fields: ['text'],
+    storeFields: ['id', 'category', 'text']
+}
 
 export class SkynetProvider implements IProvider {
     seed: string
     rootKey: string
-    client!: SkynetClient;
+    miniSearch: MiniSearch<any>
+    engine: ISkynet
+    loaded: boolean = false
 
-    constructor(seed: string, rootKey: string) {
+    constructor(seed: string, rootKey: string, engine: ISkynet = SkynetWrapped) {
         this.seed = seed
         this.rootKey = rootKey
+        this.miniSearch = new MiniSearch(MINISEARCH_CONFIG)
+        this.engine = engine
     }
 
     async init(): Promise<void> {
-        this.client = new SkynetClient("https://siasky.net")
-        await this.loadIndex()
+        await this.loadSearchIndex()
     }
 
-    async loadIndex(): Promise<void> {
-        try {
-            await this.client.browserClient.db.setJSON(this.privateKey, this.rootKey, {x: 'hello'});
-            const { data, dataLink } = await this.client.browserClient.db.getJSON(this.publicKey, this.rootKey);
-            console.log(data, dataLink)
-        } catch(e) {
-            console.log(e)
+    async loadSearchIndex(): Promise<void> {
+        const result = await this.engine.getJSON(this.seed, this.rootKey)
+
+        if (result) {
+            this.miniSearch = MiniSearch.loadJS(result, MINISEARCH_CONFIG)
         }
+
+        this.loaded = true
     }
 
-    get publicKey(): string {
-        const { publicKey } = genKeyPairFromSeed(this.seed);
-        return publicKey
+    async add(item: Item): Promise<void> {
+        if (!this.loaded) {
+            await this.loadSearchIndex()
+        }
+
+        const json = {
+            text: item.text,
+            category: 'text'
+        }
+        const skylink = await this.engine.uploadJSON(this.seed)
+
+        this.miniSearch.add({
+            ...json,
+            id: skylink
+        })
+
+        await this.engine.setJSON(this.seed, this.rootKey, this.miniSearch.toJSON())
     }
-    get privateKey(): string {
-        const { privateKey } = genKeyPairFromSeed(this.seed);
-        return privateKey
+
+    async search(s: string) {
+        if (!this.loaded) {
+            await this.loadSearchIndex()
+        }
+
+        return this.miniSearch.search(s)
     }
 }
